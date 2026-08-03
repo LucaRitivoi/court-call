@@ -1,6 +1,6 @@
 Court Call 🎾
 
-Live app: https://LucaRitivoi.github.io/court-call/ (replace with your actual Pages URL once it's live)
+Live app: https://LucaRitivoi.github.io/court-call/
 
 A weather-based tool that tells you whether tennis courts are actually safe and dry enough to play on right now — tailored to the surface, because a hard court, clay court, and grass court all dry and get slippery in completely different ways.
 
