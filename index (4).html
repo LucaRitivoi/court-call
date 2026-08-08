@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Court Call — Tennis Playability</title>
+<meta name="description" content="Check whether tennis courts are safe and dry enough to play, tailored to hard, clay, or grass surfaces — using live weather, sun position, and drying estimates for any location.">
+<meta name="theme-color" content="#1E5F74">
+<meta property="og:title" content="Court Call — Tennis Playability">
+<meta property="og:description" content="Search any location and get a surface-specific read on whether the courts are safe and dry enough to play.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='46' fill='%23C9E265'/%3E%3Cpath d='M8 50a42 42 0 0 1 84 0' fill='none' stroke='%23fff' stroke-width='5'/%3E%3Cpath d='M8 50a42 42 0 0 0 84 0' fill='none' stroke='%23fff' stroke-width='5'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root{
+  --clay: #A0522D;
+  --clay-dark: #7A3D20;
+  --hard: #1E5F74;
+  --hard-dark: #164a5c;
+  --grass: #1B4332;
+  --grass-dark: #123024;
+  --chalk: #F5F3EE;
+  --ink: #1A1F1C;
+  --ink-soft: #4A5049;
+  --line: rgba(26,31,22,0.12);
+  --surface-color: var(--hard);
+  --surface-color-dark: var(--hard-dark);
+  --puddle-opacity: 0;
+  --radius: 14px;
+  --font-display: 'Fraunces', serif;
+  --font-body: 'Inter', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+*{ box-sizing: border-box; }
+
+body{
+  margin:0;
+  background: var(--chalk);
+  color: var(--ink);
+  font-family: var(--font-body);
+  min-height:100vh;
+}
+
+.wrap{
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 32px 20px 80px;
+}
+
+.eyebrow{
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 0 0 6px;
+}
+
+h1{
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(32px, 6vw, 52px);
+  line-height: 1.02;
+  margin: 0 0 8px;
+  color: var(--ink);
+}
+
+.sub{
+  font-size: 16px;
+  color: var(--ink-soft);
+  max-width: 52ch;
+  margin: 0 0 28px;
+}
+
+/* --- Search --- */
+.search-row{
+  display:flex;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.search-field-wrap{
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+}
+
+.hint{
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin: 0 0 12px;
+}
+
+#location-input{
+  width:100%;
+  font-family: var(--font-body);
+  font-size: 16px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--line);
+  background: white;
+  color: var(--ink);
+}
+#location-input:focus{
+  outline: 2px solid var(--surface-color);
+  outline-offset: 1px;
+}
+
+button{
+  font-family: var(--font-body);
+  font-weight: 600;
+  cursor: pointer;
+}
+button:focus-visible, .swatch:focus-visible, .result-item:focus-visible{
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+#search-btn{
+  font-size: 15px;
+  padding: 14px 22px;
+  border-radius: var(--radius);
+  border: none;
+  background: var(--ink);
+  color: var(--chalk);
+}
+#search-btn:hover{ background: #000; }
+#search-btn:disabled{ opacity: 0.5; cursor: default; }
+
+#geo-btn{
+  font-size: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--line);
+  background: white;
+  color: var(--ink);
+  white-space: nowrap;
+}
+#geo-btn:hover{ background: var(--chalk); }
+#geo-btn:disabled{ opacity: 0.5; cursor: default; }
+
+#results-list{
+  list-style:none;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1.5px solid var(--line);
+  background: white;
+  display:none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 280px;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(26,31,22,0.12);
+}
+#results-list.show{ display:block; }
+.result-item{
+  width:100%;
+  text-align:left;
+  background:none;
+  border:none;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 16px;
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  color: var(--ink);
+}
+.result-item:last-child{ border-bottom:none; }
+.result-item:hover{ background: var(--chalk); }
+.result-item b{ font-weight: 600; }
+.result-item span{ color: var(--ink-soft); font-size: 13px; }
+
+#status-msg{
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-soft);
+  min-height: 18px;
+  margin-bottom: 10px;
+}
+#status-msg.error{ color: #9C3B2E; }
+.hint.error{ color: #9C3B2E; }
+
+/* --- Surface picker --- */
+.surface-picker{
+  display:flex;
+  gap: 10px;
+  margin: 24px 0;
+}
+.swatch{
+  flex:1;
+  border-radius: var(--radius);
+  border: 2px solid transparent;
+  padding: 14px 10px;
+  text-align:center;
+  color: white;
+  font-size: 14px;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+@media (prefers-reduced-motion: reduce){ .swatch{ transition:none; } }
+.swatch:hover{ transform: translateY(-2px); }
+.swatch[data-surface="hard"]{ background: var(--hard); }
+.swatch[data-surface="clay"]{ background: var(--clay); }
+.swatch[data-surface="grass"]{ background: var(--grass); }
+.swatch.active{ border-color: var(--ink); }
+.swatch b{ display:block; font-family: var(--font-display); font-size: 17px; font-weight:600; }
+
+/* --- Main panel --- */
+#panel{ display:none; }
+#panel.show{ display:block; }
+
+.main-grid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+@media (max-width: 680px){ .main-grid{ grid-template-columns: 1fr; } }
+
+.court-card{
+  background: var(--surface-color);
+  border-radius: 20px;
+  padding: 20px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition: background 0.4s ease;
+}
+@media (prefers-reduced-motion: reduce){ .court-card{ transition:none; } }
+.court-card svg{ width:100%; height:auto; max-width: 320px; }
+.puddle{ opacity: var(--puddle-opacity); transition: opacity 0.5s ease; }
+.puddle-soft{ opacity: calc(var(--puddle-opacity) * 0.7); }
+@media (prefers-reduced-motion: reduce){ .puddle{ transition:none; } }
+
+.verdict-card{
+  background: white;
+  border-radius: 20px;
+  padding: 22px 24px;
+  border: 1.5px solid var(--line);
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+}
+.verdict-label{
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 0 0 4px;
+}
+.verdict-title{
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 30px;
+  margin: 0 0 10px;
+}
+.verdict-detail{
+  font-size: 14.5px;
+  color: var(--ink-soft);
+  line-height:1.5;
+  margin: 0 0 10px;
+}
+.dry-estimate{
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--surface-color-dark);
+  background: var(--chalk);
+  border-radius: 8px;
+  padding: 6px 10px;
+  display: inline-block;
+  margin: 0 0 14px;
+}
+.score-bar-track{
+  width:100%;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--line);
+  overflow:hidden;
+}
+.score-bar-fill{
+  height:100%;
+  border-radius: 4px;
+  transition: width 0.5s ease, background 0.5s ease;
+}
+@media (prefers-reduced-motion: reduce){ .score-bar-fill{ transition:none; } }
+
+.stat-row{
+  display:flex;
+  gap: 18px;
+  flex-wrap:wrap;
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.stat-row span b{ color: var(--ink); font-weight: 500; }
+
+.override-row{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.override-question{
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  margin-right: 2px;
+}
+.override-btn{
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 100px;
+  border: 1.5px solid var(--line);
+  background: white;
+  color: var(--ink);
+}
+.override-btn:hover{ background: var(--chalk); }
+.override-badge{
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.override-badge b{ color: var(--ink); }
+.override-clear-btn{
+  font-family: var(--font-body);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 100px;
+  border: 1.5px solid var(--line);
+  background: var(--chalk);
+  color: var(--ink-soft);
+}
+.override-clear-btn:hover{ background: white; color: var(--ink); }
+
+/* --- Forecast --- */
+h2{
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+.section-note{
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin: 0 0 14px;
+  max-width: 60ch;
+}
+
+.forecast-row{
+  display:grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 32px;
+}
+@media (max-width: 680px){
+  .forecast-row{ grid-template-columns: repeat(2, 1fr); }
+}
+
+.day-card{
+  background: white;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 12px;
+  text-align:center;
+}
+.day-name{
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+.day-badge{
+  display:inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 100px;
+  color: white;
+  margin-bottom: 8px;
+}
+.day-temp{
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 18px;
+}
+.day-rain{
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  margin-top: 4px;
+}
+
+/* --- Map / pinpoint section --- */
+.map-card{
+  background: white;
+  border: 1.5px solid var(--line);
+  border-radius: 20px;
+  padding: 18px;
+  margin-bottom: 32px;
+}
+#court-map{
+  width: 100%;
+  height: 280px;
+  border-radius: 14px;
+  margin-bottom: 14px;
+  background: var(--line);
+}
+.court-pin-icon{
+  width: 22px;
+  height: 22px;
+  border-radius: 50% 50% 50% 0;
+  background: var(--surface-color);
+  border: 2px solid white;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  transform: rotate(-45deg);
+}
+
+.save-row{
+  display:flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+#court-name-input{
+  flex: 1;
+  min-width: 160px;
+  font-family: var(--font-body);
+  font-size: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1.5px solid var(--line);
+}
+#save-court-btn{
+  font-size: 13.5px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: none;
+  background: var(--ink);
+  color: var(--chalk);
+}
+#save-court-btn:hover{ background: #000; }
+
+.saved-courts{
+  display:flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.court-chip{
+  font-family: var(--font-body);
+  font-size: 13px;
+  padding: 7px 12px;
+  border-radius: 100px;
+  border: 1.5px solid var(--line);
+  background: var(--chalk);
+  color: var(--ink);
+}
+.court-chip.active{ border-color: var(--surface-color); background: white; }
+.court-chip:hover{ background: white; }
+
+/* --- Sun panel --- */
+.sun-card{
+  background: white;
+  border: 1.5px solid var(--line);
+  border-radius: 20px;
+  padding: 20px 22px;
+  margin-bottom: 32px;
+}
+.sun-summary{
+  display:flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin-bottom: 16px;
+}
+.sun-summary b{ color: var(--ink); font-weight: 500; }
+.rain-outlook-text{
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink);
+  margin: 0;
+}
+.rain-outlook-text b{ font-weight: 600; }
+.sun-timeline{
+  display:flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.sun-hour{
+  flex: 0 0 auto;
+  min-width: 56px;
+  text-align:center;
+  padding: 8px 6px;
+  border-radius: 10px;
+  background: var(--chalk);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.sun-hour.glare{ background: #FBE9C9; color: #7A5A12; }
+.sun-hour .sh-time{ font-weight: 600; color: var(--ink); margin-bottom: 2px; }
+.sun-hour .sh-alt{ font-size: 10px; }
+
+footer{
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  line-height:1.6;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Court Call</p>
+  <h1>Is it playable today?</h1>
+  <p class="sub">Search any location and get a surface-specific read on whether the courts are safe and dry enough to play — right now and for the next few days.</p>
+
+  <div class="search-row">
+    <div class="search-field-wrap">
+      <input id="location-input" type="text" placeholder="Start typing a city or town…" aria-label="Search for a location" autocomplete="off">
+      <ul id="results-list" aria-label="Location search results"></ul>
+    </div>
+    <button id="search-btn">Search</button>
+    <button id="geo-btn" type="button" title="Use my current location">📍 Use my location</button>
+  </div>
+  <p class="hint">Tip: search works best with a city or town name (e.g. "Pittsburgh" or "Dormont, PA") — it won't find specific parks or court names. Once loaded, drag the pin on the map below to your exact court.</p>
+  <p id="status-msg" role="status"></p>
+
+  <div id="panel">
+    <div class="surface-picker" role="group" aria-label="Choose court surface">
+      <button class="swatch" data-surface="hard"><b>Hard</b>fast-dry</button>
+      <button class="swatch" data-surface="clay"><b>Clay</b>slow-dry</button>
+      <button class="swatch" data-surface="grass"><b>Grass</b>slippery wet</button>
+    </div>
+
+    <div class="main-grid">
+      <div class="court-card">
+        <svg viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Court diagram showing surface wetness">
+          <rect x="10" y="10" width="280" height="280" rx="6" fill="var(--surface-color)"/>
+          <rect x="10" y="10" width="280" height="280" rx="6" fill="none" stroke="var(--chalk)" stroke-width="4"/>
+          <line x1="10" y1="150" x2="290" y2="150" stroke="var(--chalk)" stroke-width="3"/>
+          <line x1="150" y1="10" x2="150" y2="290" stroke="var(--chalk)" stroke-width="3"/>
+          <rect x="40" y="70" width="220" height="160" fill="none" stroke="var(--chalk)" stroke-width="3"/>
+          <rect x="40" y="70" width="220" height="80" fill="none" stroke="var(--chalk)" stroke-width="2"/>
+          <rect x="40" y="150" width="220" height="80" fill="none" stroke="var(--chalk)" stroke-width="2"/>
+          <ellipse class="puddle" cx="90" cy="60" rx="55" ry="18" fill="#3b6ea5"/>
+          <ellipse class="puddle" cx="210" cy="245" rx="60" ry="20" fill="#3b6ea5"/>
+          <ellipse class="puddle puddle-soft" cx="150" cy="150" rx="40" ry="14" fill="#3b6ea5"/>
+        </svg>
+      </div>
+
+      <div class="verdict-card">
+        <p class="verdict-label" id="verdict-location">—</p>
+        <p class="verdict-title" id="verdict-title">—</p>
+        <p class="verdict-detail" id="verdict-detail">Search a location to get started.</p>
+        <div class="dry-estimate" id="dry-estimate" style="display:none;"></div>
+        <div class="score-bar-track"><div class="score-bar-fill" id="score-bar" style="width:0%"></div></div>
+        <div class="stat-row" id="stat-row"></div>
+        <div class="override-row" id="override-row">
+          <span class="override-question">Doesn't match what you're seeing?</span>
+          <button type="button" class="override-btn" id="report-dry-btn">It's actually dry</button>
+          <button type="button" class="override-btn" id="report-wet-btn">It's actually wet</button>
+        </div>
+        <div class="override-badge" id="override-badge" style="display:none;"></div>
+      </div>
+    </div>
+
+    <h2>Rain outlook</h2>
+    <p class="section-note">Looks ahead through the forecast to find the next rain, then estimates how long the court needs to dry out after it stops.</p>
+    <div class="sun-card" id="rain-outlook-card">
+      <p class="rain-outlook-text" id="rain-outlook-text">—</p>
+    </div>
+
+    <h2>Pinpoint your court</h2>
+    <p class="section-note">Drag the pin to your exact court. Weather refreshes for that spot, and sun/glare timing below is calculated for its precise position.</p>
+    <div class="map-card">
+      <div id="court-map"></div>
+      <p class="hint" id="map-status" style="margin:0 0 12px; min-height:16px;"></p>
+      <div class="save-row">
+        <input id="court-name-input" type="text" placeholder="Name this court (e.g. Riverview #2)" aria-label="Court name">
+        <button id="save-court-btn" type="button">Save this court</button>
+      </div>
+      <div class="saved-courts" id="saved-courts"></div>
+    </div>
+
+    <h2>Sun &amp; glare today</h2>
+    <p class="section-note">Low sun angles can blind players facing into it — especially near sunrise and sunset. This doesn't know which way your court faces, so treat "glare risk" hours as a heads-up to check the sun's direction, not a guarantee.</p>
+    <div class="sun-card">
+      <div class="sun-summary" id="sun-summary"></div>
+      <div class="sun-timeline" id="sun-timeline"></div>
+    </div>
+
+    <h2>Next 5 days</h2>
+    <div class="forecast-row" id="forecast-row"></div>
+  </div>
+
+  <footer>
+    Playability is a weather-based estimate — it factors in current and recent rainfall, humidity, and wind, both for drying and as a playability factor on its own (steady wind and gusts both count). Sun and glare timing is calculated precisely but doesn't know your court's orientation, and dry-time estimates are rough. None of this knows your specific court's drainage, shade, maintenance, or whether it has windscreens — always trust your eyes on-site, and use "It's actually dry/wet" to correct a reading you know is off. Saved courts are kept only for this browser session and won't persist after you close the tab. Weather data from Open-Meteo; map tiles from OpenStreetMap.
+  </footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.9.0/suncalc.min.js"></script>
+<script>
+const surfaceProfiles = {
+  hard:  { label: 'Hard Court',  color: '#1E5F74', dark: '#164a5c', rainW: 5,  recentRainW: 9,  humW: 0.30, windBonus: 0.45, dryBaseHrs: 1 },
+  clay:  { label: 'Clay Court',  color: '#A0522D', dark: '#7A3D20', rainW: 4,  recentRainW: 11, humW: 0.40, windBonus: 0.30, dryBaseHrs: 3 },
+  grass: { label: 'Grass Court', color: '#1B4332', dark: '#123024', rainW: 6,  recentRainW: 13, humW: 0.50, windBonus: 0.55, dryBaseHrs: 4 },
+};
+
+let currentSurface = 'hard';
+let weatherData = null;   // { place, data }
+let selectedCoords = null; // { lat, lon }
+let savedCourts = [];      // [{ id, name, lat, lon }] — in-memory, this session only
+let map = null;
+let marker = null;
+let manualOverride = null; // null | 'dry' | 'wet' — resets whenever a new spot loads
+
+const el = (id) => document.getElementById(id);
+const root = document.documentElement;
+
+function setStatus(msg, isError=false){
+  const s = el('status-msg');
+  s.textContent = msg || '';
+  s.className = isError ? 'error' : '';
+}
+
+// --- Geocoding search ---
+el('search-btn').addEventListener('click', () => runSearch(el('location-input').value.trim()));
+el('location-input').addEventListener('keydown', (e) => { if(e.key === 'Enter') runSearch(el('location-input').value.trim()); });
+
+let debounceTimer = null;
+el('location-input').addEventListener('input', () => {
+  const query = el('location-input').value.trim();
+  clearTimeout(debounceTimer);
+  if(query.length < 2){
+    el('results-list').classList.remove('show');
+    setStatus('');
+    return;
+  }
+  debounceTimer = setTimeout(() => runSearch(query, true), 400);
+});
+
+document.addEventListener('click', (e) => {
+  if(!e.target.closest('.search-field-wrap')){
+    el('results-list').classList.remove('show');
+  }
+});
+
+async function runSearch(query, isLive){
+  if(!query){ if(!isLive) setStatus('Type a location first.', true); return; }
+  if(!isLive) setStatus('Searching…');
+  el('search-btn').disabled = true;
+  try{
+    const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=8&language=en&format=json`);
+    if(!res.ok) throw new Error('Search request failed');
+    const data = await res.json();
+    renderResults(data.results || []);
+  }catch(err){
+    setStatus('Could not search right now — check your connection and try again.', true);
+  }finally{
+    el('search-btn').disabled = false;
+  }
+}
+
+function renderResults(results){
+  const list = el('results-list');
+  list.innerHTML = '';
+  if(results.length === 0){
+    setStatus('No matches found. Try a different spelling or a nearby city.', true);
+    list.classList.remove('show');
+    return;
+  }
+  setStatus(`${results.length} match${results.length>1?'es':''} — pick one.`);
+  results.forEach(r => {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.className = 'result-item';
+    const region = [r.admin1, r.country].filter(Boolean).join(', ');
+    btn.innerHTML = `<b>${r.name}</b><br><span>${region}</span>`;
+    btn.addEventListener('click', () => {
+      el('results-list').classList.remove('show');
+      el('location-input').value = [r.name, r.admin1].filter(Boolean).join(', ');
+      loadForCoords(r.latitude, r.longitude, r.name, r.admin1);
+    });
+    li.appendChild(btn);
+    list.appendChild(li);
+  });
+  list.classList.add('show');
+}
+
+// --- Use my location ---
+el('geo-btn').addEventListener('click', () => {
+  if(!navigator.geolocation){
+    setStatus('Your browser doesn\'t support location lookup — try searching instead.', true);
+    return;
+  }
+  setStatus('Finding your location…');
+  el('geo-btn').disabled = true;
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const { latitude, longitude } = pos.coords;
+    let name = 'Your location', admin1 = '';
+    try{
+      const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`);
+      if(res.ok){
+        const info = await res.json();
+        name = info.city || info.locality || name;
+        admin1 = info.principalSubdivision || '';
+      }
+    }catch(e){ /* fall back to generic label */ }
+    el('geo-btn').disabled = false;
+    el('results-list').classList.remove('show');
+    el('location-input').value = [name, admin1].filter(Boolean).join(', ');
+    loadForCoords(latitude, longitude, name, admin1);
+  }, () => {
+    el('geo-btn').disabled = false;
+    setStatus('Could not get your location — check your browser\'s location permission.', true);
+  });
+});
+
+// --- Core weather load (shared by search, geolocation, and map drag) ---
+async function loadForCoords(lat, lon, name, admin1, opts = {}){
+  const { skipMapUpdate = false, statusTarget = null } = opts;
+  manualOverride = null;
+  const setLoadStatus = statusTarget ? (msg, isErr) => { statusTarget.textContent = msg || ''; statusTarget.classList.toggle('error', !!isErr); } : setStatus;
+  setLoadStatus('Loading weather…');
+  try{
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+      `&current=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,wind_gusts_10m` +
+      `&hourly=precipitation,relative_humidity_2m,temperature_2m,wind_speed_10m,wind_gusts_10m` +
+      `&daily=precipitation_sum,precipitation_probability_max,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,wind_gusts_10m_max` +
+      `&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch` +
+      `&timezone=auto&forecast_days=5`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('Forecast request failed');
+    const data = await res.json();
+    weatherData = { place: { name, admin1 }, data };
+    selectedCoords = { lat, lon };
+    setLoadStatus('');
+    el('panel').classList.add('show');
+    applySurface(currentSurface);
+    renderForecast();
+    renderSunPanel();
+    renderRainOutlook(currentSurface);
+    if(!skipMapUpdate) initOrUpdateMap(lat, lon);
+  }catch(err){
+    setLoadStatus('Could not load weather for that location — try again.', true);
+  }
+}
+
+// --- Surface picker ---
+document.querySelectorAll('.swatch').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentSurface = btn.dataset.surface;
+    document.querySelectorAll('.swatch').forEach(b => b.classList.toggle('active', b === btn));
+    updatePinColor();
+    if(weatherData){ applySurface(currentSurface); renderForecast(); renderRainOutlook(currentSurface); }
+  });
+});
+document.querySelector('.swatch[data-surface="hard"]').classList.add('active');
+
+// --- Manual conditions override ---
+el('report-dry-btn').addEventListener('click', () => {
+  manualOverride = 'dry';
+  if(weatherData) applySurface(currentSurface);
+});
+el('report-wet-btn').addEventListener('click', () => {
+  manualOverride = 'wet';
+  if(weatherData) applySurface(currentSurface);
+});
+
+function renderOverrideUI(){
+  const row = el('override-row');
+  const badge = el('override-badge');
+  if(!manualOverride){
+    row.style.display = 'flex';
+    badge.style.display = 'none';
+    return;
+  }
+  row.style.display = 'none';
+  badge.style.display = 'flex';
+  const label = manualOverride === 'dry' ? 'Reported: actually dry' : 'Reported: actually wet';
+  badge.innerHTML = `<span>📍 <b>${label}</b> — overriding the weather read for this spot.</span><button type="button" class="override-clear-btn" id="override-clear-btn">Clear</button>`;
+  el('override-clear-btn').addEventListener('click', () => {
+    manualOverride = null;
+    if(weatherData) applySurface(currentSurface);
+  });
+}
+
+function recentRainSum(hourly, hoursBack=3){
+  if(!hourly || !hourly.time) return 0;
+  const nowIdx = closestHourIndex(hourly.time);
+  let sum = 0;
+  for(let i = Math.max(0, nowIdx - hoursBack + 1); i <= nowIdx; i++){
+    sum += hourly.precipitation[i] || 0;
+  }
+  return sum;
+}
+
+// Detects "on and off" drizzle: several separate wet hours with the most
+// recent one still close by. Total volume can be tiny in this pattern
+// (0.01-0.02") while the surface stays slick the whole time — a plain
+// volume sum misses this, so we count wet hours and recency separately.
+function wetnessPattern(hourly, hoursBack=8){
+  if(!hourly || !hourly.time) return { wetHourCount: 0, lastWetGapHours: 99 };
+  const nowIdx = closestHourIndex(hourly.time);
+  let wetHourCount = 0;
+  let lastWetGapHours = 99;
+  for(let i = Math.max(0, nowIdx - hoursBack + 1); i <= nowIdx; i++){
+    if((hourly.precipitation[i] || 0) > 0.002){
+      wetHourCount++;
+      const gap = nowIdx - i;
+      if(gap < lastWetGapHours) lastWetGapHours = gap;
+    }
+  }
+  return { wetHourCount, lastWetGapHours };
+}
+
+function closestHourIndex(times){
+  const now = Date.now();
+  let best = 0, bestDiff = Infinity;
+  times.forEach((t, i) => {
+    const diff = Math.abs(new Date(t).getTime() - now);
+    if(diff < bestDiff){ bestDiff = diff; best = i; }
+  });
+  return best;
+}
+
+function scoreToVerdict(score){
+  if(score >= 90) return { title: 'Game on', tag: 'GREAT', color: '#2E7D46' };
+  if(score >= 75) return { title: 'Playable', tag: 'GOOD', color: '#4B7A2E' };
+  if(score >= 50) return { title: 'Risky footing', tag: 'RISKY', color: '#B8791A' };
+  return { title: 'Skip it today', tag: 'POOR', color: '#9C3B2E' };
+}
+
+function applySurface(surfaceKey){
+  const profile = surfaceProfiles[surfaceKey];
+  root.style.setProperty('--surface-color', profile.color);
+  root.style.setProperty('--surface-color-dark', profile.dark);
+
+  const { data, place } = weatherData;
+  const current = data.current;
+  const hourly = data.hourly;
+  const rawRecentRain = recentRainSum(hourly, 6);
+  const pattern = wetnessPattern(hourly, 8);
+  const rawIsTraceWet = pattern.wetHourCount >= 2 && pattern.lastWetGapHours <= 3;
+
+  // A manual report only corrects the wetness read — wind is still real
+  // wind no matter what someone reports about the court surface.
+  const dryOverride = manualOverride === 'dry';
+  const wetOverride = manualOverride === 'wet';
+  const effPrecip = dryOverride ? 0 : (current.precipitation || 0);
+  const effRecentRain = dryOverride ? 0 : rawRecentRain;
+  const effTraceWet = dryOverride ? false : rawIsTraceWet;
+
+  let score = 100;
+  score -= effPrecip * profile.rainW * 22;
+  score -= effRecentRain * profile.recentRainW * 7;
+  if(!dryOverride) score -= Math.max(0, (current.relative_humidity_2m || 0) - 55) * profile.humW * 1.4;
+  score += Math.min(current.wind_speed_10m || 0, 20) * profile.windBonus * 0.4;
+
+  // Wind as a playability factor in its own right, not just a drying aid —
+  // sustained wind disrupts ball flight, toss, and footing, and gustiness
+  // (unpredictable swings, not just steady speed) makes it worse. This part
+  // applies regardless of surface material or any manual dry/wet report.
+  const windSpeed = current.wind_speed_10m || 0;
+  const gustSpeed = current.wind_gusts_10m || windSpeed;
+  const gustDelta = Math.max(0, gustSpeed - windSpeed);
+  let windPenalty = 0;
+  if(windSpeed > 10) windPenalty += (windSpeed - 10) * 1.6;
+  if(windSpeed > 20) windPenalty += (windSpeed - 20) * 2.2;
+  if(gustDelta > 8) windPenalty += (gustDelta - 8) * 1.5;
+  score -= windPenalty;
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  // Pro-conditions rule: courts don't stay open in active rain, and freshly-wet
+  // surfaces aren't tournament-playable even if the sky has cleared.
+  const isActivelyRaining = effPrecip > 0.003;
+  const recentlySoaked = effRecentRain > 0.03;
+  const traceCaps = { hard: 30, clay: 55, grass: 25 };
+
+  if(wetOverride) score = Math.min(score, 35);
+  else if(isActivelyRaining) score = Math.min(score, 15);
+  else if(recentlySoaked) score = Math.min(score, 40);
+  else if(effTraceWet) score = Math.min(score, traceCaps[surfaceKey]);
+
+  // High/extreme wind caps apply on top of everything else — no surface is
+  // "pro playable" in a near-gale, no matter how dry it is.
+  if(windSpeed >= 40) score = Math.min(score, 25);
+  else if(windSpeed >= 30) score = Math.min(score, 45);
+
+  root.style.setProperty('--puddle-opacity', dryOverride ? '0' : Math.max(0, (100 - score) / 130).toFixed(2));
+
+  const verdict = scoreToVerdict(score);
+  el('verdict-location').textContent = `${place.name}${place.admin1 ? ', ' + place.admin1 : ''} · ${profile.label}`;
+  el('verdict-title').textContent = verdict.title;
+  el('verdict-detail').textContent = buildDetailText(surfaceKey, current, effRecentRain, score, effTraceWet, pattern, windSpeed, gustDelta, manualOverride);
+
+  const bar = el('score-bar');
+  bar.style.width = score + '%';
+  bar.style.background = verdict.color;
+
+  el('stat-row').innerHTML = `
+    <span>Temp <b>${Math.round(current.temperature_2m)}°F</b></span>
+    <span>Humidity <b>${Math.round(current.relative_humidity_2m)}%</b></span>
+    <span>Wind <b>${Math.round(windSpeed)} mph</b>${gustDelta > 5 ? ` (gusts ${Math.round(gustSpeed)})` : ''}</span>
+    <span>Rain now <b>${(current.precipitation || 0).toFixed(2)}"</b></span>
+    <span>Last 6h <b>${rawRecentRain.toFixed(2)}"</b></span>
+  `;
+
+  renderDryEstimate(surfaceKey, current, effRecentRain, effTraceWet);
+  renderOverrideUI();
+}
+
+function buildDetailText(surfaceKey, current, recentRain, score, isTraceWet, pattern, windSpeed, gustDelta, override){
+  if(override === 'dry') return `Score of ${score}/100 — using your on-court report of dry conditions instead of the weather-model read.${windSpeed > 15 ? ' Wind is still factored in, since that\'s independent of surface wetness.' : ''}`;
+  if(override === 'wet') return `Score of ${score}/100 — using your on-court report that it's actually wet, even though the weather model read it as dry.`;
+
+  const bits = [];
+  if((current.precipitation || 0) > 0.003) bits.push('it\'s actively raining, so courts should be treated as closed');
+  else if(recentRain > 0.03) bits.push(`rain in the last 6h (${recentRain.toFixed(2)}") hasn't had time to fully dry for competitive play`);
+  else if(isTraceWet) bits.push(`on-and-off light rain (${pattern.wetHourCount} wet hours recently) has left a slick film even without real accumulation`);
+  if(current.relative_humidity_2m > 80) bits.push('humidity is high, so surfaces may stay damp or dewy');
+  if(windSpeed >= 30) bits.push(`wind is strong enough (${Math.round(windSpeed)} mph) to make this not pro-playable regardless of dryness`);
+  else if(windSpeed > 20) bits.push(`wind (${Math.round(windSpeed)} mph) is disrupting ball flight and serve toss`);
+  else if(windSpeed > 10 && windSpeed <= 20) bits.push('some wind is helping things dry out');
+  if(gustDelta > 8) bits.push('gusty, unpredictable wind is making shots harder to control');
+  if(bits.length === 0) return `Conditions look dry and stable for ${surfaceProfiles[surfaceKey].label.toLowerCase()} play.`;
+  return `Score of ${score}/100 mainly because ${bits.join(', and ')}.`;
+}
+
+// --- Estimated dry time ---
+function renderDryEstimate(surfaceKey, current, recentRain, isTraceWet){
+  const box = el('dry-estimate');
+  const isWet = (current.precipitation || 0) > 0.003 || recentRain > 0.03 || isTraceWet;
+  if(!isWet || !selectedCoords){
+    box.style.display = 'none';
+    return;
+  }
+  const profile = surfaceProfiles[surfaceKey];
+  let hours = profile.dryBaseHrs;
+  hours += recentRain * 6;
+  hours += (current.precipitation || 0) * 4;
+  if(isTraceWet) hours += profile.dryBaseHrs * 0.75; // intermittent drizzle keeps re-wetting the film
+  hours -= Math.min(current.wind_speed_10m || 0, 20) * 0.05;
+  if(current.relative_humidity_2m > 75) hours += 1;
+  hours = Math.max(0.5, hours);
+
+  const now = new Date();
+  const dryDate = new Date(now.getTime() + hours * 3600 * 1000);
+
+  // Check against sunset — surfaces barely dry after dark
+  const times = SunCalc.getTimes(now, selectedCoords.lat, selectedCoords.lon);
+  let text;
+  if(dryDate > times.sunset && now < times.sunset){
+    text = `Estimated to still be drying past sunset (${formatTime(times.sunset)}) — likely won't be fully dry today.`;
+  }else if(dryDate.getDate() !== now.getDate()){
+    text = `Estimated dry time stretches past today — check again tomorrow morning.`;
+  }else{
+    text = `Estimated dry by ~${formatTime(dryDate)}`;
+  }
+  box.textContent = text;
+  box.style.display = 'inline-block';
+}
+
+function formatTime(date){
+  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+// --- Forecast ---
+function renderForecast(){
+  const profile = surfaceProfiles[currentSurface];
+  const daily = weatherData.data.daily;
+  const hourly = weatherData.data.hourly;
+  const row = el('forecast-row');
+  row.innerHTML = '';
+
+  daily.time.forEach((dateStr, i) => {
+    const dayHumidity = avgHumidityForDate(hourly, dateStr);
+    const dayWind = daily.wind_speed_10m_max[i] || 0;
+    const dayGust = daily.wind_gusts_10m_max ? (daily.wind_gusts_10m_max[i] || dayWind) : dayWind;
+    const dayGustDelta = Math.max(0, dayGust - dayWind);
+
+    let score = 100;
+    score -= (daily.precipitation_sum[i] || 0) * profile.rainW * 20;
+    score -= (daily.precipitation_probability_max[i] || 0) * 0.55;
+    score -= Math.max(0, dayHumidity - 55) * profile.humW * 1.2;
+    score += Math.min(dayWind, 20) * profile.windBonus * 0.35;
+
+    let windPenalty = 0;
+    if(dayWind > 10) windPenalty += (dayWind - 10) * 1.6;
+    if(dayWind > 20) windPenalty += (dayWind - 20) * 2.2;
+    if(dayGustDelta > 8) windPenalty += (dayGustDelta - 8) * 1.5;
+    score -= windPenalty;
+
+    score = Math.max(0, Math.min(100, Math.round(score)));
+    if((daily.precipitation_sum[i] || 0) > 0.05) score = Math.min(score, 35);
+    if(dayWind >= 40) score = Math.min(score, 25);
+    else if(dayWind >= 30) score = Math.min(score, 45);
+    const verdict = scoreToVerdict(score);
+
+    const date = new Date(dateStr + 'T12:00:00');
+    const dayName = i === 0 ? 'Today' : date.toLocaleDateString('en-US', { weekday: 'short' });
+
+    const card = document.createElement('div');
+    card.className = 'day-card';
+    card.innerHTML = `
+      <div class="day-name">${dayName}</div>
+      <div class="day-badge" style="background:${verdict.color}">${verdict.tag}</div>
+      <div class="day-temp">${Math.round(daily.temperature_2m_max[i])}°</div>
+      <div class="day-rain">${(daily.precipitation_sum[i] || 0).toFixed(2)}" rain</div>
+      <div class="day-rain">${Math.round(dayWind)} mph wind</div>
+    `;
+    row.appendChild(card);
+  });
+}
+
+function avgHumidityForDate(hourly, dateStr){
+  if(!hourly || !hourly.time) return 60;
+  const vals = [];
+  hourly.time.forEach((t, i) => {
+    if(t.startsWith(dateStr)) vals.push(hourly.relative_humidity_2m[i]);
+  });
+  if(vals.length === 0) return 60;
+  return vals.reduce((a,b) => a+b, 0) / vals.length;
+}
+
+// --- Rain outlook: finds the next rain in the forecast and projects when
+// the court should be dry enough to play after it stops. ---
+function renderRainOutlook(surfaceKey){
+  const box = el('rain-outlook-text');
+  if(!weatherData || !selectedCoords){ box.textContent = '—'; return; }
+
+  const hourly = weatherData.data.hourly;
+  const profile = surfaceProfiles[surfaceKey];
+  const threshold = 0.003;
+  const nowIdx = closestHourIndex(hourly.time);
+
+  // Find the next hour (from now) with measurable rain.
+  let startIdx = -1;
+  for(let i = nowIdx; i < hourly.time.length; i++){
+    if((hourly.precipitation[i] || 0) > threshold){ startIdx = i; break; }
+  }
+
+  if(startIdx === -1){
+    box.innerHTML = `No rain in the forecast window ahead — conditions should stay dry for ${profile.label.toLowerCase()} play, weather-wise.`;
+    return;
+  }
+
+  // Extend through consecutive wet hours to find when it stops.
+  let endIdx = startIdx;
+  while(endIdx + 1 < hourly.time.length && (hourly.precipitation[endIdx + 1] || 0) > threshold){
+    endIdx++;
+  }
+
+  const rainVolume = hourly.precipitation.slice(startIdx, endIdx + 1).reduce((a, b) => a + (b || 0), 0);
+  const rainStart = new Date(hourly.time[startIdx]);
+  // Rain "stops" at the start of the next hour after the last wet hour.
+  const rainStopIdx = Math.min(endIdx + 1, hourly.time.length - 1);
+  const rainStop = new Date(hourly.time[rainStopIdx]);
+
+  // Forecast conditions in the few hours right after it stops, to drive drying.
+  const afterEnd = Math.min(rainStopIdx + 2, hourly.time.length - 1);
+  let windSum = 0, humSum = 0, count = 0;
+  for(let i = rainStopIdx; i <= afterEnd; i++){
+    windSum += hourly.wind_speed_10m ? (hourly.wind_speed_10m[i] || 0) : 0;
+    humSum += hourly.relative_humidity_2m[i] || 0;
+    count++;
+  }
+  const avgWind = count ? windSum / count : 0;
+  const avgHum = count ? humSum / count : 60;
+
+  let dryHours = profile.dryBaseHrs;
+  dryHours += rainVolume * 6;
+  dryHours -= Math.min(avgWind, 20) * 0.05;
+  if(avgHum > 75) dryHours += 1;
+  dryHours = Math.max(0.5, dryHours);
+
+  const playableTime = new Date(rainStop.getTime() + dryHours * 3600 * 1000);
+  const sunTimesOnPlayableDay = SunCalc.getTimes(playableTime, selectedCoords.lat, selectedCoords.lon);
+
+  const isRainingNow = startIdx === nowIdx;
+  const rainLabel = rainVolume >= 0.01 ? `${rainVolume.toFixed(2)}" expected` : 'light rain expected';
+
+  let text;
+  if(isRainingNow){
+    text = `<b>Currently raining</b> — expected to stop around <b>${formatTime(rainStop)}</b> (${rainLabel}). `;
+  }else{
+    text = `<b>Rain expected ${formatTime(rainStart)}–${formatTime(rainStop)}</b> (${rainLabel}). `;
+  }
+
+  if(playableTime > sunTimesOnPlayableDay.sunset){
+    text += `Courts likely won't fully dry before dark — probably not playable until the next sunny stretch.`;
+  }else if(playableTime.toDateString() !== rainStop.toDateString()){
+    text += `Drying is expected to stretch past that day — check back for an updated estimate.`;
+  }else{
+    text += `${profile.label} should be playable again by approximately <b>${formatTime(playableTime)}</b>.`;
+  }
+
+  box.innerHTML = text;
+}
+function compassLabel(azimuthDeg){
+  const dirs = ['N','NE','E','SE','S','SW','W','NW'];
+  const idx = Math.round(((azimuthDeg % 360) / 45)) % 8;
+  return dirs[idx];
+}
+
+function renderSunPanel(){
+  if(!selectedCoords) return;
+  const { lat, lon } = selectedCoords;
+  const now = new Date();
+  const times = SunCalc.getTimes(now, lat, lon);
+  const pos = SunCalc.getPosition(now, lat, lon);
+  const curAltDeg = pos.altitude * 180 / Math.PI;
+  const curAzDeg = (pos.azimuth * 180 / Math.PI + 180) % 360;
+
+  el('sun-summary').innerHTML = `
+    <span>Sunrise <b>${formatTime(times.sunrise)}</b></span>
+    <span>Sunset <b>${formatTime(times.sunset)}</b></span>
+    <span>Sun now <b>${curAltDeg > 0 ? Math.round(curAltDeg) + '° above horizon, ' + compassLabel(curAzDeg) : 'below horizon'}</b></span>
+  `;
+
+  const timeline = el('sun-timeline');
+  timeline.innerHTML = '';
+  for(let h = 0; h < 12; h++){
+    const t = new Date(now.getTime() + h * 3600 * 1000);
+    if(t > times.sunset && h > 0) break;
+    const p = SunCalc.getPosition(t, lat, lon);
+    const altDeg = p.altitude * 180 / Math.PI;
+    if(altDeg <= 0) continue;
+    const isGlare = altDeg < 15;
+    const cell = document.createElement('div');
+    cell.className = 'sun-hour' + (isGlare ? ' glare' : '');
+    cell.innerHTML = `<div class="sh-time">${formatTime(t)}</div><div class="sh-alt">${Math.round(altDeg)}°${isGlare ? ' glare' : ''}</div>`;
+    timeline.appendChild(cell);
+  }
+}
+
+// --- Map ---
+function updatePinColor(){
+  if(!marker) return;
+  const icon = L.divIcon({ className: '', html: `<div class="court-pin-icon"></div>`, iconSize: [22,22], iconAnchor: [11,22] });
+  marker.setIcon(icon);
+}
+
+function initOrUpdateMap(lat, lon){
+  if(!map){
+    map = L.map('court-map').setView([lat, lon], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 19
+    }).addTo(map);
+    const icon = L.divIcon({ className: '', html: `<div class="court-pin-icon"></div>`, iconSize: [22,22], iconAnchor: [11,22] });
+    marker = L.marker([lat, lon], { draggable: true, icon }).addTo(map);
+    let dragDebounce = null;
+    marker.on('drag', () => {
+      clearTimeout(dragDebounce);
+      el('map-status').textContent = 'Adjusting…';
+      el('map-status').classList.remove('error');
+    });
+    marker.on('dragend', () => {
+      clearTimeout(dragDebounce);
+      dragDebounce = setTimeout(() => {
+        const p = marker.getLatLng();
+        selectedCoords = { lat: p.lat, lon: p.lng };
+        loadForCoords(p.lat, p.lng, weatherData.place.name, weatherData.place.admin1, {
+          skipMapUpdate: true,
+          statusTarget: el('map-status')
+        });
+      }, 450);
+    });
+  }else{
+    map.setView([lat, lon], 15);
+    marker.setLatLng([lat, lon]);
+  }
+  setTimeout(() => map.invalidateSize(), 150);
+}
+
+// --- Saved courts (session-only) ---
+el('save-court-btn').addEventListener('click', () => {
+  if(!selectedCoords){ return; }
+  const name = el('court-name-input').value.trim();
+  if(!name){ el('court-name-input').focus(); return; }
+  savedCourts.push({ id: Date.now(), name, lat: selectedCoords.lat, lon: selectedCoords.lon });
+  el('court-name-input').value = '';
+  renderSavedCourts();
+});
+
+function renderSavedCourts(){
+  const wrap = el('saved-courts');
+  wrap.innerHTML = '';
+  savedCourts.forEach(c => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'court-chip';
+    chip.textContent = c.name;
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.court-chip').forEach(x => x.classList.remove('active'));
+      chip.classList.add('active');
+      loadForCoords(c.lat, c.lon, weatherData ? weatherData.place.name : c.name, weatherData ? weatherData.place.admin1 : '');
+    });
+    wrap.appendChild(chip);
+  });
+}
+</script>
+</body>
+</html>
